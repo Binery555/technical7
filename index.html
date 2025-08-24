@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+  <meta charset="UTF-8">
+  <title>Untitled</title>
+  
+
+</head>
+<body>
+<!-- partial:index.partial.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CryptoBubbles — Binance Bubble Board</title>
+  <link href="https://db.onlinewebfonts.com/c/d05c19ccecf7003d248c60ffd6b5e8f7?family=Binance+PLEX" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    :root{
+      --bg:#0b0f14;        /* deep dark */
+      --panel:#101722;     /* cards */
+      --ink:#e8eef7;       /* main text */
+      --muted:#9ab0c9;     /* secondary text */
+      --up:#3acf87;        /* green */
+      --down:#e04b4a;      /* red */
+      --ring:#1f2a3a;      /* outlines */
+      --accent:#f0b90b;    /* binance yellow */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;}
+    body{
+      margin:0; background:radial-gradient(80% 120% at 10% 10%, #0d1420 0%, #090d12 35%, #05080c 100%);
+      color:var(--ink); font-family:"Binance PLEX", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+      overflow:hidden;
+    }
+    header{
+      position:fixed; inset:12px 12px auto 12px; z-index:10;
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+      background:linear-gradient(180deg, rgba(31,40,56,.85), rgba(16,23,34,.85));
+      backdrop-filter: blur(8px);
+      border:1px solid #1d2734; border-radius:14px; padding:10px 12px;
+      box-shadow:0 6px 24px rgba(0,0,0,.35);
+    }
+    header .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.3px}
+    header .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+    header .sep{width:1px;height:26px;background:#223041;opacity:.9}
+    .ctrl{display:flex;align-items:center;gap:8px;}
+    .ctrl label{font-size:.85rem;color:var(--muted)}
+    input[type="text"], select{
+      background:var(--panel); color:var(--ink); border:1px solid #243246;
+      padding:8px 10px; border-radius:10px; outline:none; font-size:.95rem;
+    }
+    input[type="checkbox"]{accent-color:var(--accent)}
+    button{
+      background:var(--accent); color:#0b0f14; font-weight:700; border:0; border-radius:10px;
+      padding:8px 12px; cursor:pointer; box-shadow:0 4px 14px rgba(240,185,11,.25);
+    }
+    #board{position:absolute; inset:0;}
+    #footer{
+      position:fixed; inset:auto 12px 12px 12px; font-size:.8rem; color:var(--muted); opacity:.85;
+      background:linear-gradient(180deg, rgba(31,40,56,.85), rgba(16,23,34,.85));
+      border:1px solid #1d2734; border-radius:12px; padding:6px 10px; backdrop-filter: blur(8px);
+    }
+    /* Tooltip */
+    .tip{position:fixed; pointer-events:none; z-index:20; transform:translate(-50%,-115%);
+      background:#0f1723; color:#e8eef7; padding:10px 12px; border:1px solid #243246; border-radius:10px;
+      box-shadow:0 10px 30px rgba(0,0,0,.4); min-width:180px; font-size:.9rem}
+    .tip h4{margin:0 0 6px 0; font-size:1rem}
+    .row{display:flex; justify-content:space-between; gap:8px; color:#b9c7d9}
+    .row strong{color:#e8eef7}
+
+    /* Bubble styles */
+    .bubble{cursor:pointer}
+    .bubble text{font-weight:800; text-anchor:middle; alignment-baseline:middle; dominant-baseline:middle;}
+    .sym{font-size: clamp(10px, 1.1vw, 18px)}
+    .pct{font-size: clamp(8px, .9vw, 14px); opacity:.9}
+
+    /* Glow filter */
+    svg defs filter feGaussianBlur{color-interpolation-filters:sRGB}
+
+    @media (max-width: 720px){
+      header{inset:10px;}
+      #footer{inset:auto 10px 10px 10px}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="dot"></span> CryptoBubbles — <span style="opacity:.9">Binance</span></div>
+    <div class="sep"></div>
+
+    <div class="ctrl">
+      <label for="majors">Majors only</label>
+      <input id="majors" type="checkbox" />
+    </div>
+
+    <div class="ctrl">
+      <label for="pairs">Pairs</label>
+      <select id="pairs">
+        <option value="USDT" selected>USDT</option>
+        <option value="FDUSD">FDUSD</option>
+        <option value="BUSD">BUSD</option>
+      </select>
+    </div>
+
+    <div class="ctrl">
+      <label for="limit">Coins</label>
+      <select id="limit">
+        <option>48</option>
+        <option selected>96</option>
+        <option>120</option>
+      </select>
+    </div>
+
+    <div class="ctrl">
+      <label for="refresh">Auto refresh</label>
+      <select id="refresh">
+        <option value="0">Off</option>
+        <option value="15">15s</option>
+        <option value="30" selected>30s</option>
+        <option value="60">60s</option>
+      </select>
+    </div>
+
+    <div class="ctrl" style="min-width:220px">
+      <label for="q">Search</label>
+      <input id="q" type="text" placeholder="e.g. BTC, SOL, XRP"/>
+    </div>
+
+    <button id="reload" title="Reload now">Reload</button>
+  </header>
+
+  <div id="board"></div>
+  <div id="footer">Data: Binance 24h tickers · Bubble size ≈ liquidity (quote volume) · Color = 24h % change</div>
+  <div id="tooltip" class="tip" style="display:none"></div>
+
+  <script>
+  ;(() => {
+    const API = 'https://api.binance.com/api/v3/ticker/24hr';
+    const majors = new Set(['BTC','ETH','BNB','SOL','XRP','ADA','DOGE','TRX','TON','SHIB','AVAX','LINK','MATIC','LTC','BCH','DOT','NEAR','ATOM','ETC','XLM','APT','HBAR','SUI','ICP','AR','INJ','FIL','UNI','OP','TAO','RENDER','PYTH','TIA','SEI']);
+
+    const state = {
+      pair: 'USDT',
+      limit: 96,
+      majorsOnly: false,
+      search: '',
+      timer: null,
+      data: [],
+      filtered: []
+    };
+
+    // UI refs
+    const el = {
+      board: document.getElementById('board'),
+      q: document.getElementById('q'),
+      majors: document.getElementById('majors'),
+      pairs: document.getElementById('pairs'),
+      limit: document.getElementById('limit'),
+      refresh: document.getElementById('refresh'),
+      reload: document.getElementById('reload'),
+      tip: document.getElementById('tooltip')
+    };
+
+    // SVG setup
+    const svg = d3.select('#board').append('svg').attr('width', window.innerWidth).attr('height', window.innerHeight);
+    const defs = svg.append('defs');
+    const glow = defs.append('filter').attr('id','glow');
+    glow.append('feGaussianBlur').attr('stdDeviation','4.5').attr('result','coloredBlur');
+    const feMerge = glow.append('feMerge');
+    feMerge.append('feMergeNode').attr('in','coloredBlur');
+    feMerge.append('feMergeNode').attr('in','SourceGraphic');
+
+    const g = svg.append('g');
+
+    // Resize handler
+    const resize = () => {
+      svg.attr('width', window.innerWidth).attr('height', window.innerHeight);
+      if(simulation) simulation.force('center', d3.forceCenter(window.innerWidth/2, window.innerHeight/2)).alpha(0.4).restart();
+    }
+    window.addEventListener('resize', resize);
+
+    // Fetch + build
+    async function load(){
+      try{
+        const res = await fetch(API, {cache:'no-store'});
+        const json = await res.json();
+        state.data = build(json);
+        applyFilters();
+      }catch(e){
+        console.error(e);
+        fallback();
+      }
+    }
+
+    function build(rows){
+      const pair = state.pair;
+      const out = [];
+      for(const r of rows){
+        const s = r.symbol;
+        if(!s.endsWith(pair)) continue;               // only selected quote
+        const base = s.slice(0, -pair.length);
+        // filter out leveraged & weirds
+        if(/(UP|DOWN|BULL|BEAR)$/i.test(base)) continue;
+        if(base === pair) continue;
+        const change = +r.priceChangePercent;
+        const price = +r.lastPrice;
+        const qVol = +r.quoteVolume; // already in quote asset
+        // ignore dead/low-liquidity
+        if(!isFinite(change) || !isFinite(price) || !isFinite(qVol) || qVol <= 0) continue;
+        out.push({
+          id: s, base, change, price, qVol,
+          link: `https://www.binance.com/en/trade/${base}_${pair}?theme=dark&type=spot`
+        });
+      }
+      // sort by liquidity
+      out.sort((a,b) => b.qVol - a.qVol);
+      return out;
+    }
+
+    function applyFilters(){
+      const q = state.search.trim().toUpperCase();
+      let rows = state.data.slice();
+      if(state.majorsOnly) rows = rows.filter(d => majors.has(d.base));
+      if(q) rows = rows.filter(d => d.base.includes(q));
+      // keep top N by volume
+      rows = rows.slice(0, +state.limit);
+      state.filtered = rows;
+      draw(rows);
+    }
+
+    // Color scale: map -20%..+20% to red..green, clamp outside
+    function colorFor(pct){
+      const x = Math.max(-20, Math.min(20, pct));
+      const t = (x + 20) / 40; // 0..1
+      // interpolate from red to green in HSL for smoother tones
+      const h = 0 + t * 120;   // 0 = red, 120 = green
+      const s = 70; const l = 45;
+      return `hsl(${h} ${s}% ${l}%)`;
+    }
+
+    // radius scale based on sqrt of quote volume
+    const rScale = d3.scaleSqrt().domain([1e5, 1e10]).range([18, 120]);
+
+    let simulation = null;
+
+    function draw(data){
+      // bind
+      const sel = g.selectAll('g.bubble').data(data, d => d.id);
+
+      // exit
+      sel.exit().transition().duration(300).style('opacity',0).remove();
+
+      // enter
+      const enter = sel.enter().append('g').attr('class','bubble')
+        .attr('transform', `translate(${window.innerWidth/2},${window.innerHeight/2})`)
+        .style('opacity',0)
+        .on('mouseenter', (ev,d)=>showTip(ev,d))
+        .on('mouseleave', hideTip)
+        .on('mousemove', (ev,d)=>moveTip(ev))
+        .on('click', (ev,d)=>window.open(d.link, '_blank'));
+
+      enter.append('circle')
+        .attr('stroke', '#0b0f14')
+        .attr('stroke-width', 2)
+        .attr('filter','url(#glow)');
+
+      enter.append('text').attr('class','sym').attr('y',-2).text(d=>d.base);
+      enter.append('text').attr('class','pct').attr('y',16).text(d=>fmtPct(d.change));
+
+      const merged = enter.merge(sel);
+
+      merged.select('circle')
+        .transition().duration(400)
+        .attr('r', d=> d.r = Math.max(18, Math.min(120, rScale(d.qVol))))
+        .attr('fill', d=>colorFor(d.change))
+        .attr('stroke', d=>d.change>=0 ? 'rgba(58,207,135,.35)':'rgba(224,75,74,.35)')
+        .attr('stroke-width', 6);
+
+      merged.style('opacity',1);
+
+      // Restart force layout
+      if(simulation) simulation.stop();
+      simulation = d3.forceSimulation(data)
+        .force('charge', d3.forceManyBody().strength(2))
+        .force('collide', d3.forceCollide().radius(d=>d.r + 3).iterations(2))
+        .force('center', d3.forceCenter(window.innerWidth/2, window.innerHeight/2))
+        .force('x', d3.forceX(window.innerWidth/2).strength(.03))
+        .force('y', d3.forceY(window.innerHeight/2).strength(.03))
+        .on('tick', () => {
+          merged.attr('transform', d=>`translate(${d.x = clamp(d.x, d.r, window.innerWidth - d.r)}, ${d.y = clamp(d.y, d.r, window.innerHeight - d.r)})`);
+        });
+    }
+
+    function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+
+    function fmtPct(x){
+      const s = (x>0?'+':'') + x.toFixed(2) + '%';
+      return s;
+    }
+
+    function showTip(ev, d){
+      const t = el.tip; t.style.display='block';
+      t.innerHTML = `
+        <h4>${d.base} / ${state.pair}</h4>
+        <div class="row"><span>Price</span><strong>${Number(d.price).toLocaleString(undefined,{maximumFractionDigits:8})}</strong></div>
+        <div class="row"><span>24h Change</span><strong style="color:${d.change>=0?'var(--up)':'var(--down)'}">${fmtPct(d.change)}</strong></div>
+        <div class="row"><span>Quote Volume</span><strong>${abbrev(d.qVol)} ${state.pair}</strong></div>
+        <div class="row" style="margin-top:6px"><em>Click to open on Binance</em></div>
+      `;
+      moveTip(ev);
+    }
+    function moveTip(ev){
+      const t = el.tip; const x = ev.clientX, y = ev.clientY;
+      t.style.left = x + 'px'; t.style.top = y + 'px';
+    }
+    function hideTip(){ el.tip.style.display='none'; }
+
+    function abbrev(v){
+      const a = Math.abs(v);
+      if(a >= 1e12) return (v/1e12).toFixed(2)+'T';
+      if(a >= 1e9)  return (v/1e9 ).toFixed(2)+'B';
+      if(a >= 1e6)  return (v/1e6 ).toFixed(2)+'M';
+      if(a >= 1e3)  return (v/1e3 ).toFixed(2)+'K';
+      return v.toFixed(0);
+    }
+
+    // Controls
+    el.q.addEventListener('input', (e)=>{ state.search = e.target.value; applyFilters(); });
+    el.majors.addEventListener('change', (e)=>{ state.majorsOnly = e.target.checked; applyFilters(); });
+    el.pairs.addEventListener('change', (e)=>{ state.pair = e.target.value; load(); });
+    el.limit.addEventListener('change', (e)=>{ state.limit = +e.target.value; applyFilters(); });
+    el.reload.addEventListener('click', ()=> load());
+    el.refresh.addEventListener('change', (e)=>{
+      const sec = +e.target.value;
+      if(state.timer) { clearInterval(state.timer); state.timer=null; }
+      if(sec>0) state.timer = setInterval(load, sec*1000);
+    });
+
+    // Kickoff
+    load();
+    // start interval default (30s)
+    el.refresh.dispatchEvent(new Event('change'));
+
+  })();
+  </script>
+</body>
+</html>
+<!-- partial -->
+  
+</body>
+</html>
