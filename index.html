@@ -37,14 +37,14 @@
     position:relative;overflow:hidden;
     height:clamp(460px,72vh,920px);
   }
-  /* Start in "no oscillator" mode → one row that fills all */
   .grid{display:grid;gap:12px;grid-template-rows:1fr 0px;height:100%}
   .slot{position:relative}
   .chart{position:absolute;inset:0}
 
+  /* LOGO BIGGER */
   .corner-logo{
-    position:absolute; z-index:2; top:8px; left:8px; width:54px; height:auto;
-    opacity:.45; pointer-events:none; filter:drop-shadow(0 2px 2px rgba(0,0,0,.35));
+    position:absolute; z-index:2; top:8px; left:8px; width:84px; height:auto;
+    opacity:.5; pointer-events:none; filter:drop-shadow(0 2px 2px rgba(0,0,0,.35));
   }
 
   .pill{font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted)}
@@ -75,7 +75,6 @@
 <header>
   <h1>AI Signal Studio — Mega Indicators</h1>
 
-  <!-- Market selector -->
   <div class="ctrl">
     <label class="hint">Market</label>
     <select id="market">
@@ -284,36 +283,24 @@ let sCandle = cMain.addCandlestickSeries({
 });
 let haSeries=null;
 
-/* ========= Smarter syncing: attach only when an oscillator is visible ========= */
+/* ========= Smarter syncing ========= */
 let syncMainToOsc = null;
 let syncOscToMain = null;
 let syncing = false;
 
 function attachSync(){
   if(syncMainToOsc || syncOscToMain) return;
-  syncMainToOsc = (range)=>{
-    if(!range || syncing) return;
-    syncing=true; try{ cOsc.timeScale().setVisibleRange(range); }finally{ syncing=false; }
-  };
-  syncOscToMain = (range)=>{
-    if(!range || syncing) return;
-    syncing=true; try{ cMain.timeScale().setVisibleRange(range); }finally{ syncing=false; }
-  };
+  syncMainToOsc = (range)=>{ if(!range || syncing) return; syncing=true; try{ cOsc.timeScale().setVisibleRange(range); }finally{ syncing=false; } };
+  syncOscToMain = (range)=>{ if(!range || syncing) return; syncing=true; try{ cMain.timeScale().setVisibleRange(range); }finally{ syncing=false; } };
   cMain.timeScale().subscribeVisibleTimeRangeChange(syncMainToOsc);
   cOsc.timeScale().subscribeVisibleTimeRangeChange(syncOscToMain);
 }
 function detachSync(){
-  if(syncMainToOsc){
-    cMain.timeScale().unsubscribeVisibleTimeRangeChange(syncMainToOsc);
-    syncMainToOsc=null;
-  }
-  if(syncOscToMain){
-    cOsc.timeScale().unsubscribeVisibleTimeRangeChange(syncOscToMain);
-    syncOscToMain=null;
-  }
+  if(syncMainToOsc){ cMain.timeScale().unsubscribeVisibleTimeRangeChange(syncMainToOsc); syncMainToOsc=null; }
+  if(syncOscToMain){ cOsc.timeScale().unsubscribeVisibleTimeRangeChange(syncOscToMain); syncOscToMain=null; }
 }
 
-/* ====== Range Guards & Right-Offset Anchor (CENTER-ish) ====== */
+/* ====== Range Guards & Right-Offset Anchor ====== */
 let guarding=false;
 const ANCHOR_RATIO = 0.45;
 function anchorLatestSlightRight(ts){
@@ -330,7 +317,7 @@ function clampLeftEdge(ts, firstIndex){
   }
 }
 
-/* Interaction guard to avoid lag while user drags/scrolls */
+/* Interaction anti-lag */
 let userInteracting=false, interactTimer=null;
 const mainHost = document.getElementById('c-main');
 ['mousedown','touchstart','wheel'].forEach(ev=>{
@@ -345,10 +332,7 @@ function installGuards(chart){
   const handler = ()=>{
     if(guarding || userInteracting) return;
     guarding = true;
-    try{
-      clampLeftEdge(ts, 0);
-      anchorLatestSlightRight(ts);
-    }finally{ guarding = false; }
+    try{ clampLeftEdge(ts, 0); anchorLatestSlightRight(ts); }finally{ guarding = false; }
   };
   ts.subscribeVisibleLogicalRangeChange(handler);
 }
@@ -384,13 +368,7 @@ function openWS(symbol, interval){
   closeWS();
   const stream = `${symbol.toLowerCase()}@kline_${interval}`;
   const url = `${WS_URL_BASE}/${stream}`;
-  try{
-    WS = new WebSocket(url);
-  }catch(e){
-    console.warn('WS init failed', e);
-    setStatus(`Live off • ${symbol} • ${interval}`);
-    return;
-  }
+  try{ WS = new WebSocket(url); }catch(e){ console.warn('WS init failed', e); setStatus(`Live off • ${symbol} • ${interval}`); return; }
 
   WS.onopen=()=>{ RECONNECT_TRIES=0; setStatus(`Live: ${symbol} • ${interval}`); };
   WS.onerror=()=> setStatus(`Socket error • ${symbol} • ${interval}`);
@@ -420,7 +398,7 @@ function openWS(symbol, interval){
     }
     Active.forEach(it=>it.update(DATA));
     if(!userInteracting) anchorLatestSlightRight(cMain.timeScale());
-  }catch(err){ /* swallow parse/update errors */ } };
+  }catch(err){ } };
 }
 
 async function loadInitial(symbol, interval){
@@ -435,7 +413,7 @@ async function loadInitial(symbol, interval){
     sCandle.setData(DATA.map(d=>({time:d.time,open:d.open,high:d.high,low:d.low,close:d.close})));
     if(els.haToggle.checked){
       ensureHeikinSeries(); haSeries.setData(HeikinAshi(DATA));
-      sCandle.setData([]); // hide native if HA on
+      sCandle.setData([]);
     }
     queueMicrotask(()=> cMain.timeScale().scrollToPosition(-2, false));
     setStatus(`History loaded • ${symbol} • ${interval}`);
@@ -544,16 +522,16 @@ function ensureHeikinSeries(){
   cMain.priceScale('ha').applyOptions({scaleMargins:{top:0.12,bottom:0.12}});
 }
 
-/* Layout toggling: only show oscillator row when any osc active */
+/* Layout toggling */
 function anyOsc(){ return Active.some(x=>x.kind==='osc'); }
 function refreshOscLayout(){
   if(anyOsc()){
-    els.grid.style.gridTemplateRows = 'minmax(260px,1fr) minmax(140px,.55fr)';
+    els.grid.style.gridTemplateRows = 'minmax(260px,1fr) minmax(160px,.6fr)';
     els.oscSlot.style.display='block';
     attachSync();
   }else{
     els.grid.style.gridTemplateRows = '1fr 0px';
-    els.oscSlot.style.display='block'; // keep in DOM for sizing, but height is 0px
+    els.oscSlot.style.display='block';
     detachSync();
   }
 }
@@ -580,16 +558,22 @@ function removeIndicator(id){
 
 /* Series helpers */
 function lineOn(chart,opts={}){ return chart.addLineSeries({lineWidth:2, ...opts}); }
-function histOn(chart,extra){ return chart.addHistogramSeries({...extra}); }
+function histOn(chart,opts={}){ return chart.addHistogramSeries({...opts}); }
+function bandOn(chart){ const upper=lineOn(chart), middle=lineOn(chart,{lineWidth:1}), lower=lineOn(chart); return {upper,middle,lower}; }
 function pack(series,updater){ const list=Array.isArray(series)?series:[series]; return {series:list,update:updater}; }
 function packOsc(series,updater){ const p=pack(series,updater); return {...p,kind:'osc'}; }
 function setLine(series,y){ series.setData(DATA.map((d,i)=>({time:d.time,value:y[i]==null?NaN:y[i]}))); }
 function setConstLine(series,val){ series.setData(DATA.map(d=>({time:d.time,value:val}))); }
 
-/* ===== Indicators math (subset) ===== */
+/* ===== Indicators math ===== */
 const val=o=>o.close;
 function SMA(arr,p,acc=val){const out=Array(arr.length).fill(null); let s=0; for(let i=0;i<arr.length;i++){const x=acc(arr[i]); s+=x; if(i>=p) s-=acc(arr[i-p]); if(i>=p-1) out[i]=s/p;} return out;}
 function EMA(arr,p,acc=val){const out=Array(arr.length).fill(null); const k=2/(p+1); let prev=null; for(let i=0;i<arr.length;i++){const x=acc(arr[i]); if(prev==null){ if(i>=p-1){ prev=SMA(arr.slice(0,i+1),p,acc)[i]; out[i]=prev;} } else { prev=x*k+prev*(1-k); out[i]=prev; } } return out;}
+function WMA(arr,p,acc=val){const out=Array(arr.length).fill(null); const denom=p*(p+1)/2; for(let i=0;i<arr.length;i++){ if(i<p-1) continue; let s=0,w=0; for(let j=0;j<p;j++){ s += acc(arr[i-j])*(p-j); w+= (p-j);} out[i]=s/denom; } return out;}
+function HMA(arr,p,acc=val){const w1=WMA(arr,Math.floor(p/2),acc), w2=WMA(arr,p,acc); const diff=arr.map((_,i)=>({close:(w1[i]??0)*2-(w2[i]??0)})); return WMA(diff,Math.round(Math.sqrt(p)),x=>x.close);}
+function DEMA(arr,p,acc=val){const e=EMA(arr,p,acc); const e2=EMA(arr,p,i=>e[i]??acc(arr[i])); return e.map((v,i)=> v!=null && e2[i]!=null ? 2*v - e2[i] : null);}
+function TEMA(arr,p,acc=val){const e=EMA(arr,p,acc); const e2=EMA(arr,p,i=>e[i]??acc(arr[i])); const e3=EMA(arr,p,i=>e2[i]??acc(arr[i])); return e.map((v,i)=> (v!=null&&e2[i]!=null&&e3[i]!=null)? 3*(v - e2[i]) + e3[i] : null);}
+function VWMA(arr,p){return EMA(arr,p,(o,i)=>o.close*(o.volume||0))/EMA(arr,p,(o)=>o.volume||0);}
 function ATR(arr,p=14){const out=Array(arr.length).fill(null); let prevC=null,trEMA=null; const k=2/(p+1); for(let i=0;i<arr.length;i++){const h=arr[i].high,l=arr[i].low,c=arr[i].close; const tr=prevC==null?(h-l):Math.max(h-l,Math.abs(h-prevC),Math.abs(l-prevC)); trEMA = trEMA==null? tr : (trEMA*(1-k)+tr*k); out[i]=trEMA; prevC=c;} return out;}
 function RSI(arr,p=14){const out=Array(arr.length).fill(null); let g=0,l=0; for(let i=1;i<arr.length;i++){const ch=arr[i].close-arr[i-1].close; const up=Math.max(ch,0),dn=Math.max(-ch,0); if(i<=p){ g+=up; l+=dn; if(i===p){ const rs=(g/p)/((l/p)||1e-12); out[i]=100-100/(1+rs);} } else { g=(g*(p-1)+up)/p; l=(l*(p-1)+dn)/p; const rs=g/(l||1e-12); out[i]=100-100/(1+rs);} } return out;}
 function HeikinAshi(arr){const out=[]; let prevO=(arr[0].open+arr[0].close)/2, prevC=(arr[0].open+arr[0].high+arr[0].low+arr[0].close)/4;
@@ -599,39 +583,177 @@ function HeikinAshi(arr){const out=[]; let prevO=(arr[0].open+arr[0].close)/2, p
     out.push({time:arr[i].time,open:o,high:h,low:l,close:c,volume:arr[i].volume}); prevO=o; prevC=c;
   } return out;
 }
-
-/* Registry (RSI contains guides; others trimmed for brevity) */
-const Registry={
-  SMA:{kind:'overlay',params:[{k:'period',v:20,min:1},{k:'_color',v:defaultColor}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>s.setData(A.map((d,i)=>({time:d.time,value:SMA(A,p.period)[i]??NaN}))));}},
-  EMA:{kind:'overlay',params:[{k:'period',v:50,min:1},{k:'_color',v:defaultColor}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>s.setData(A.map((d,i)=>({time:d.time,value:EMA(A,p.period)[i]??NaN}))));}},
-  ATR:{kind:'osc',params:[{k:'period',v:14},{k:'_color',v:'#fcd535'}],add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=>s.setData(A.map((d,i)=>({time:d.time,value:ATR(A,p.period)[i]??NaN}))));}},
-  HeikinAshi:{kind:'overlay',params:[],add(){ensureHeikinSeries(); return {series:[haSeries],update:(A)=>haSeries.setData(HeikinAshi(A)),extraCleanup:()=>{try{cMain.removeSeries(haSeries)}catch{}}};}},
-  RSI:{
-    kind:'osc',
-    params:[
-      {k:'period',v:14},
-      {k:'_color',v:'#ef4444'},
-      {k:'overBought',v:70},
-      {k:'obSize',v:1},
-      {k:'overSold',v:30},
-      {k:'osSize',v:1},
-      {k:'showZone',v:true,type:'bool'}
-    ],
-    add(p){
-      const rsiLine = lineOn(cOsc,{lineWidth:2}); setSeriesColor(rsiLine, p._color || '#ef4444');
-      const guideOB = lineOn(cOsc,{lineWidth:p.obSize||1}); const guideOS = lineOn(cOsc,{lineWidth:p.osSize||1});
-      const guideColor = '#ef4444'; guideOB.applyOptions({color:guideColor}); guideOS.applyOptions({color:guideColor});
-      const updater = A=>{
-        const r=RSI(A,p.period);
-        rsiLine.setData(A.map((d,i)=>({time:d.time,value:r[i]??NaN})));
-        guideOB.applyOptions({lineWidth:p.obSize||1}); guideOS.applyOptions({lineWidth:p.osSize||1});
-        setConstLine(guideOB, p.overBought ?? 70);
-        setConstLine(guideOS, p.overSold ?? 30);
-      };
-      return packOsc([rsiLine,guideOB,guideOS], updater);
+function STD(arr,p,acc=val){const out=Array(arr.length).fill(null); for(let i=0;i<arr.length;i++){ if(i<p-1) continue; const slice=arr.slice(i-p+1,i+1).map(acc); const m=slice.reduce((a,b)=>a+b,0)/p; const v=slice.reduce((a,b)=>a+(b-m)**2,0)/p; out[i]=Math.sqrt(v);} return out;}
+function highest(arr,p,acc=val){const out=Array(arr.length).fill(null); let dq=[]; for(let i=0;i<arr.length;i++){const x=acc(arr[i]); while(dq.length && dq[dq.length-1].v<=x) dq.pop(); dq.push({i,v:x}); while(dq[0] && dq[0].i<=i-p) dq.shift(); if(i>=p-1) out[i]=dq[0].v;} return out;}
+function lowest(arr,p,acc=val){const out=Array(arr.length).fill(null); let dq=[]; for(let i=0;i<arr.length;i++){const x=acc(arr[i]); while(dq.length && dq[dq.length-1].v>=x) dq.pop(); dq.push({i,v:x}); while(dq[0] && dq[0].i<=i-p) dq.shift(); if(i>=p-1) out[i]=dq[0].v;} return out;}
+function ROC(arr,p){const out=Array(arr.length).fill(null); for(let i=0;i<arr.length;i++){ if(i<p) continue; const prev=arr[i-p].close; out[i]=(arr[i].close-prev)/prev*100;} return out;}
+function CCI(arr,p=20){const out=Array(arr.length).fill(null); const tp=arr.map(o=>(o.high+o.low+o.close)/3); const sma=SMA(arr,p,(_,i)=>tp[i]); const dev=Array(arr.length).fill(null); for(let i=0;i<arr.length;i++){ if(i<p-1) continue; let s=0; for(let j=i-p+1;j<=i;j++){ s += Math.abs(tp[j]-sma[i]); } dev[i]=s/p; out[i]=(tp[i]-sma[i])/(0.015*(dev[i]||1)); } return out;}
+function Stochastic(arr,kp=14,dp=3){const hh=highest(arr,kp,o=>o.high), ll=lowest(arr,kp,o=>o.low); const k=arr.map((o,i)=> hh[i]==null?null:((o.close-ll[i])/(hh[i]-ll[i]||1))*100 ); const d=SMA(arr,dp,(_,i)=>k[i]??0); return {k,d};}
+function StochRSI(arr,p=14,smK=3,smD=3){const r=RSI(arr,p); const hh=highest(r.map((v,i)=>({close:v??-Infinity})),p,o=>o.close); const ll=lowest(r.map((v,i)=>({close:v??Infinity})),p,o=>o.close);
+  const raw=r.map((v,i)=> (v==null||hh[i]==null)?null: ((v-ll[i])/(hh[i]-ll[i]||1))*100 ); const k=SMA(arr,smK,(_,i)=>raw[i]??0); const d=SMA(arr,smD,(_,i)=>k[i]??0); return {k,d};}
+function MACD(arr,fast=12,slow=26,signal=9){const e1=EMA(arr,fast), e2=EMA(arr,slow); const macd=arr.map((_,i)=> (e1[i]==null||e2[i]==null)?null:(e1[i]-e2[i])); const sig=EMA(arr,signal,(_,i)=>macd[i]??0); const hist=arr.map((_,i)=> (macd[i]==null||sig[i]==null)?null:(macd[i]-sig[i])); return {macd,sig,hist};}
+function PPO(arr,fast=12,slow=26,signal=9){const e1=EMA(arr,fast), e2=EMA(arr,slow); const ppo=arr.map((_,i)=> (e1[i]==null||e2[i]==null||!e2[i])?null:((e1[i]-e2[i])/e2[i])*100); const sig=EMA(arr,signal,(_,i)=>ppo[i]??0); const hist=arr.map((_,i)=> (ppo[i]==null||sig[i]==null)?null:(ppo[i]-sig[i])); return {ppo,sig,hist};}
+function TRIX(arr,p=15){const e1=EMA(arr,p), e2=EMA(arr,p,(_,i)=>e1[i]??val(_)), e3=EMA(arr,p,(_,i)=>e2[i]??val(_)); const out=Array(arr.length).fill(null); for(let i=1;i<arr.length;i++){ if(e3[i-1]!=null&&e3[i]!=null&&e3[i-1]!==0) out[i]=( (e3[i]-e3[i-1]) / e3[i-1] )*100; } return out;}
+function TSI(arr,short=25,long=13){const m=[]; for(let i=1;i<arr.length;i++){ m[i]=arr[i].close-arr[i-1].close; } const abs=m.map(x=>Math.abs(x||0)); const ema1=EMA(m.map((x,i)=>({close:x??0})),short,x=>x.close), ema2=EMA(ema1.map((x)=>({close:x??0})),long,x=>x.close); const a1=EMA(abs.map((x)=>({close:x??0})),short,x=>x.close), a2=EMA(a1.map((x)=>({close:x??0})),long,x=>x.close); return ema2.map((v,i)=> (a2[i]? (v/a2[i])*100 : null));}
+function WilliamsR(arr,p=14){const hh=highest(arr,p,o=>o.high), ll=lowest(arr,p,o=>o.low); return arr.map((o,i)=> hh[i]==null?null: ((hh[i]-o.close)/(hh[i]-ll[i]||1))*-100 );}
+function Aroon(arr,p=14){const outUp=[], outDown=[]; for(let i=0;i<arr.length;i++){ if(i<p-1){outUp[i]=null; outDown[i]=null; continue;} let imax=i, imin=i; for(let j=i-p+1;j<=i;j++){ if(arr[j].high>arr[imax].high) imax=j; if(arr[j].low<arr[imin].low) imin=j; } outUp[i]=((p-(i-imax))/p)*100; outDown[i]=((p-(i-imin))/p)*100; } return {up:outUp,down:outDown};}
+function DM(arr){ // directional movement components
+  const plusDM=[], minusDM=[], tr=[]; for(let i=1;i<arr.length;i++){ const up=arr[i].high-arr[i-1].high; const dn=arr[i-1].low-arr[i].low; plusDM[i]= (up>dn && up>0)? up:0; minusDM[i]=(dn>up && dn>0)? dn:0;
+    const high=arr[i].high, low=arr[i].low, prevClose=arr[i-1].close; tr[i]=Math.max(high-low, Math.abs(high-prevClose), Math.abs(low-prevClose)); }
+  return {plusDM,minusDM,tr};
+}
+function ADX(arr,p=14){const {plusDM,minusDM,tr} = DM(arr); const atr=EMA(tr.map(x=>({close:x||0})),p,x=>x.close);
+  const plusDI=plusDM.map((v,i)=> atr[i]? (v/atr[i])*100 : null); const minusDI=minusDM.map((v,i)=> atr[i]? (v/atr[i])*100 : null);
+  const dx=plusDI.map((v,i)=> (v==null||minusDI[i]==null||(v+minusDI[i])===0)?null:(Math.abs(v-minusDI[i])/(v+minusDI[i]))*100 );
+  const adx = EMA(dx.map(x=>({close:x??0})), p, x=>x.close);
+  return {plusDI,minusDI,adx};
+}
+function Awesome(arr,fast=5,slow=34){ const m=arr.map(o=>(o.high+o.low)/2); const fastS=SMA(arr,fast,(_,i)=>m[i]); const slowS=SMA(arr,slow,(_,i)=>m[i]); return m.map((_,i)=> (fastS[i]==null||slowS[i]==null)?null:(fastS[i]-slowS[i])); }
+function PSAR(arr, step=0.02, max=0.2){
+  const out=Array(arr.length).fill(null); let trend=1; // 1 up, -1 down
+  let af=step; let ep=arr[0].high; let sar=arr[0].low;
+  for(let i=1;i<arr.length;i++){
+    sar = sar + af*(ep - sar);
+    if(trend===1){
+      if(arr[i].low < sar){ trend=-1; sar=ep; ep=arr[i].low; af=step; }
+      else{ if(arr[i].high > ep){ ep=arr[i].high; af=Math.min(max,af+step); } }
+      // ensure sar below last two lows
+      if(i>=2) sar=Math.min(sar, arr[i-1].low, arr[i-2].low);
+    }else{
+      if(arr[i].high > sar){ trend=1; sar=ep; ep=arr[i].high; af=step; }
+      else{ if(arr[i].low < ep){ ep=arr[i].low; af=Math.min(max,af+step);} }
+      if(i>=2) sar=Math.max(sar, arr[i-1].high, arr[i-2].high);
     }
-  },
-  // (You can re-add the rest of indicators here as needed)
+    out[i]=sar;
+  } return out;
+}
+function Supertrend(arr, period=10, mult=3){
+  const tr=ATR(arr,period); const hl2=arr.map(o=>(o.high+o.low)/2);
+  const upper=tr.map((v,i)=> v==null?null:(hl2[i]+mult*v)); const lower=tr.map((v,i)=> v==null?null:(hl2[i]-mult*v));
+  const finalUpper=[null], finalLower=[null]; for(let i=1;i<arr.length;i++){
+    finalUpper[i] = (upper[i]< (finalUpper[i-1]??Infinity) || arr[i-1].close > (finalUpper[i-1]??Infinity)) ? upper[i] : finalUpper[i-1];
+    finalLower[i] = (lower[i]>(finalLower[i-1]??-Infinity) || arr[i-1].close < (finalLower[i-1]??-Infinity)) ? lower[i] : finalLower[i-1];
+  }
+  const trend=Array(arr.length).fill(null); const st=Array(arr.length).fill(null);
+  for(let i=1;i<arr.length;i++){
+    if(st[i-1]==null){ st[i]=hl2[i]>hl2[i-1]?finalLower[i]:finalUpper[i]; trend[i]=hl2[i]>hl2[i-1]?1:-1; continue; }
+    if(st[i-1]===finalUpper[i-1]){
+      st[i] = (arr[i].close>finalUpper[i]) ? finalLower[i] : finalUpper[i];
+    } else {
+      st[i] = (arr[i].close<finalLower[i]) ? finalUpper[i] : finalLower[i];
+    }
+    trend[i] = (st[i]===finalLower[i])?1:-1;
+  }
+  return {st,trend};
+}
+function Donchian(arr,p=20){ return {hi:highest(arr,p,o=>o.high), lo:lowest(arr,p,o=>o.low), mid:SMA(arr,p,o=>(o.high+o.low)/2)}; }
+function Keltner(arr,p=20,mult=2){ const ema=EMA(arr,p); const atr=ATR(arr,p); return {upper:atr.map((v,i)=> (ema[i]==null||v==null)?null: ema[i]+mult*v), middle:ema, lower:atr.map((v,i)=> (ema[i]==null||v==null)?null: ema[i]-mult*v)};}
+function BB(arr,p=20,stdMult=2){ const basis=SMA(arr,p); const dev=STD(arr,p); return {upper:dev.map((v,i)=> (basis[i]==null||v==null)?null:basis[i]+stdMult*v), middle:basis, lower:dev.map((v,i)=> (basis[i]==null||v==null)?null:basis[i]-stdMult*v)}; }
+function VWAPcalc(arr){ let cumPV=0,cumV=0; const out=Array(arr.length).fill(null); for(let i=0;i<arr.length;i++){ const tp=(arr[i].high+arr[i].low+arr[i].close)/3; const v=arr[i].volume||0; cumPV += tp*v; cumV += v; out[i] = cumV? (cumPV/cumV) : null; } return out; }
+function OBVcalc(arr){ const out=Array(arr.length).fill(0); for(let i=1;i<arr.length;i++){ if(arr[i].close>arr[i-1].close) out[i]=out[i-1]+(arr[i].volume||0); else if(arr[i].close<arr[i-1].close) out[i]=out[i-1]-(arr[i].volume||0); else out[i]=out[i-1]; } return out; }
+function MFIcalc(arr,p=14){ const tp=arr.map(o=>(o.high+o.low+o.close)/3); const mf=arr.map((o,i)=> tp[i]*(o.volume||0)); const out=Array(arr.length).fill(null); for(let i=p;i<arr.length;i++){ let pos=0,neg=0; for(let j=i-p+1;j<=i;j++){ if(tp[j]>tp[j-1]) pos+=mf[j]; else if(tp[j]<tp[j-1]) neg+=mf[j]; } const mr = neg? pos/neg : 0; out[i]=100-(100/(1+mr)); } return out; }
+function CMFcalc(arr,p=20){ const out=Array(arr.length).fill(null); for(let i=p-1;i<arr.length;i++){ let sumMF=0,sumV=0; for(let j=i-p+1;j<=i;j++){ const mfm = ((arr[j].close - arr[j].low) - (arr[j].high - arr[j].close)) / ((arr[j].high - arr[j].low)||1); const mfv = mfm * (arr[j].volume||0); sumMF+=mfv; sumV+=(arr[j].volume||0); } out[i] = sumV? (sumMF/sumV) : 0; } return out; }
+function ADLcalc(arr){ const out=Array(arr.length).fill(0); for(let i=0;i<arr.length;i++){ const mfm = ((arr[i].close - arr[i].low) - (arr[i].high - arr[i].close)) / ((arr[i].high - arr[i].low)||1); const mfv = mfm * (arr[i].volume||0); out[i] = (out[i-1]||0) + mfv; } return out; }
+
+/* ===== Registry ===== */
+const Registry={
+  /* Moving Averages */
+  SMA:{kind:'overlay',params:[{k:'period',v:20,min:1},{k:'_color',v:defaultColor}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>setLine(s,SMA(A,p.period)));}},
+  EMA:{kind:'overlay',params:[{k:'period',v:50,min:1},{k:'_color',v:defaultColor}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>setLine(s,EMA(A,p.period)));}},
+  WMA:{kind:'overlay',params:[{k:'period',v:30,min:1},{k:'_color',v:defaultColor}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>setLine(s,WMA(A,p.period)));}},
+  HMA:{kind:'overlay',params:[{k:'period',v:55,min:1},{k:'_color',v:defaultColor}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>setLine(s,HMA(A,p.period)));}},
+  DEMA:{kind:'overlay',params:[{k:'period',v:21,min:1},{k:'_color',v:defaultColor}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>setLine(s,DEMA(A,p.period)));}},
+  TEMA:{kind:'overlay',params:[{k:'period',v:34,min:1},{k:'_color',v:defaultColor}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>setLine(s,TEMA(A,p.period)));}},
+  VWMA:{kind:'overlay',params:[{k:'period',v:20,min:1},{k:'_color',v:defaultColor}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>setLine(s,VWMA(A,p.period)));}},
+
+  /* Volatility / Bands */
+  BB:{kind:'overlay',params:[{k:'period',v:20,min:1},{k:'std',v:2,step:0.1},{k:'_color',v:'#60a5fa'}],
+    add(p){const {upper,middle,lower}=bandOn(cMain); setSeriesColor(upper,p._color); setSeriesColor(middle,hexToRGBA(p._color,0.7)); setSeriesColor(lower,p._color);
+      return pack([upper,middle,lower],A=>{ const b=BB(A,p.period,p.std); setLine(upper,b.upper); setLine(middle,b.middle); setLine(lower,b.lower); });
+    }},
+  Keltner:{kind:'overlay',params:[{k:'period',v:20,min:1},{k:'mult',v:2,step:0.1},{k:'_color',v:'#34d399'}],
+    add(p){const {upper,middle,lower}=bandOn(cMain); setSeriesColor(upper,p._color); setSeriesColor(middle,hexToRGBA(p._color,0.7)); setSeriesColor(lower,p._color);
+      return pack([upper,middle,lower],A=>{ const k=Keltner(A,p.period,p.mult); setLine(upper,k.upper); setLine(middle,k.middle); setLine(lower,k.lower); });
+    }},
+  Donchian:{kind:'overlay',params:[{k:'period',v:20,min:1},{k:'_color',v:'#f472b6'}],
+    add(p){const {upper,middle,lower}=bandOn(cMain); setSeriesColor(upper,p._color); setSeriesColor(middle,hexToRGBA(p._color,0.7)); setSeriesColor(lower,p._color);
+      return pack([upper,middle,lower],A=>{ const d=Donchian(A,p.period); setLine(upper,d.hi); setLine(lower,d.lo); setLine(middle,d.mid); });
+    }},
+  ATR:{kind:'osc',params:[{k:'period',v:14},{k:'_color',v:'#fcd535'}],add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=>setLine(s,ATR(A,p.period)));}},
+  Supertrend:{kind:'overlay',params:[{k:'period',v:10,min:1},{k:'mult',v:3,step:0.1},{k:'_color',v:'#22c55e'}],
+    add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>{ const st=Supertrend(A,p.period,p.mult); setLine(s,st.st); });}},
+  PSAR:{kind:'overlay',params:[{k:'step',v:0.02,step:0.01},{k:'max',v:0.2,step:0.01},{k:'_color',v:'#eab308'}],
+    add(p){const s=lineOn(cMain,{lineWidth:1}); setSeriesColor(s,p._color); return pack(s,A=>setLine(s,PSAR(A,p.step,p.max)));}},
+
+  /* Price / Overlay extras */
+  VWAP:{kind:'overlay',params:[{k:'_color',v:'#a78bfa'}],add(p){const s=lineOn(cMain); setSeriesColor(s,p._color); return pack(s,A=>setLine(s,VWAPcalc(A)));}},
+  HeikinAshi:{kind:'overlay',params:[],add(){ensureHeikinSeries(); return {series:[haSeries],update:(A)=>haSeries.setData(HeikinAshi(A)),extraCleanup:()=>{try{cMain.removeSeries(haSeries)}catch{}}};}},
+  Ichimoku:{kind:'overlay',params:[{k:'conv',v:9,min:1},{k:'base',v:26,min:1},{k:'spanB',v:52,min:1},{k:'_color',v:'#38bdf8'}],
+    add(p){const conv=lineOn(cMain), base=lineOn(cMain), spanA=lineOn(cMain,{lineWidth:1}), spanB=lineOn(cMain,{lineWidth:1});
+      setSeriesColor(conv,p._color); setSeriesColor(base,hexToRGBA(p._color,0.7)); setSeriesColor(spanA,hexToRGBA(p._color,0.6)); setSeriesColor(spanB,hexToRGBA(p._color,0.6));
+      const up=A=>{ const convLine=A.map((_,i)=>{ const hi=highest(A,p.conv,o=>o.high)[i], lo=lowest(A,p.conv,o=>o.low)[i]; return (hi==null||lo==null)?null:(hi+lo)/2; });
+        const baseLine=A.map((_,i)=>{ const hi=highest(A,p.base,o=>o.high)[i], lo=lowest(A,p.base,o=>o.low)[i]; return (hi==null||lo==null)?null:(hi+lo)/2; });
+        const spanALine=convLine.map((v,i)=> (v==null||baseLine[i]==null)?null: (v+baseLine[i])/2 );
+        const spanBLine=A.map((_,i)=>{ const hi=highest(A,p.spanB,o=>o.high)[i], lo=lowest(A,p.spanB,o=>o.low)[i]; return (hi==null||lo==null)?null:(hi+lo)/2; });
+        setLine(conv,convLine); setLine(base,baseLine); setLine(spanA,spanALine); setLine(spanB,spanBLine);
+      }; return pack([conv,base,spanA,spanB],up);
+    }},
+  PivotClassic:{kind:'overlay',params:[{k:'_color',v:'#f59e0b'}],
+    add(p){const r=lineOn(cMain,{lineWidth:1}); setSeriesColor(r,p._color);
+      return pack(r,A=>{ const piv=A.map(o=> (o.high+o.low+o.close)/3 ); setLine(r,piv); });
+    }},
+
+  /* Oscillators */
+  RSI:{kind:'osc',params:[{k:'period',v:14},{k:'_color',v:'#ef4444'},{k:'overBought',v:70},{k:'obSize',v:1},{k:'overSold',v:30},{k:'osSize',v:1},{k:'showZone',v:true,type:'bool'}],
+    add(p){const rsiLine=lineOn(cOsc,{lineWidth:2}); setSeriesColor(rsiLine,p._color||'#ef4444'); const guideOB=lineOn(cOsc,{lineWidth:p.obSize||1}); const guideOS=lineOn(cOsc,{lineWidth:p.osSize||1}); guideOB.applyOptions({color:'#ef4444'}); guideOS.applyOptions({color:'#ef4444'});
+      const updater=A=>{ const r=RSI(A,p.period); setLine(rsiLine,r); guideOB.applyOptions({lineWidth:p.obSize||1}); guideOS.applyOptions({lineWidth:p.osSize||1}); setConstLine(guideOB,p.overBought??70); setConstLine(guideOS,p.overSold??30); };
+      return packOsc([rsiLine,guideOB,guideOS],updater);
+    }},
+  MACD:{kind:'osc',params:[{k:'fast',v:12},{k:'slow',v:26},{k:'signal',v:9},{k:'_color',v:'#60a5fa'}],
+    add(p){const l=lineOn(cOsc), s=lineOn(cOsc,{lineWidth:1}); const h=histOn(cOsc,{priceFormat:{type:'price',precision:4},base:0}); setSeriesColor(l,p._color); setSeriesColor(s,hexToRGBA(p._color,0.7));
+      return packOsc([l,s,h],A=>{ const m=MACD(A,p.fast,p.slow,p.signal); setLine(l,m.macd); setLine(s,m.sig); h.setData(A.map((d,i)=>({time:d.time,value:m.hist[i]==null?NaN:m.hist[i]}))); });
+    }},
+  Stochastic:{kind:'osc',params:[{k:'k',v:14,min:1},{k:'d',v:3,min:1},{k:'_color',v:'#34d399'}],
+    add(p){const kL=lineOn(cOsc), dL=lineOn(cOsc,{lineWidth:1}); setSeriesColor(kL,p._color); setSeriesColor(dL,hexToRGBA(p._color,0.7)); return packOsc([kL,dL],A=>{ const {k,d}=Stochastic(A,p.k,p.d); setLine(kL,k); setLine(dL,d); });}},
+  StochRSI:{kind:'osc',params:[{k:'period',v:14},{k:'smK',v:3},{k:'smD',v:3},{k:'_color',v:'#a78bfa'}],
+    add(p){const kL=lineOn(cOsc), dL=lineOn(cOsc,{lineWidth:1}); setSeriesColor(kL,p._color); setSeriesColor(dL,hexToRGBA(p._color,0.7)); return packOsc([kL,dL],A=>{ const r=StochRSI(A,p.period,p.smK,p.smD); setLine(kL,r.k); setLine(dL,r.d); });}},
+  CCI:{kind:'osc',params:[{k:'period',v:20},{k:'_color',v:'#f472b6'}],
+    add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=>setLine(s,CCI(A,p.period)));}},
+  PPO:{kind:'osc',params:[{k:'fast',v:12},{k:'slow',v:26},{k:'signal',v:9},{k:'_color',v:'#f59e0b'}],
+    add(p){const l=lineOn(cOsc), s=lineOn(cOsc,{lineWidth:1}); const h=histOn(cOsc,{base:0}); setSeriesColor(l,p._color); setSeriesColor(s,hexToRGBA(p._color,0.7));
+      return packOsc([l,s,h],A=>{ const m=PPO(A,p.fast,p.slow,p.signal); setLine(l,m.ppo); setLine(s,m.sig); h.setData(A.map((d,i)=>({time:d.time,value:m.hist[i]==null?NaN:m.hist[i]}))); });
+    }},
+  TRIX:{kind:'osc',params:[{k:'period',v:15},{k:'_color',v:'#22c55e'}],
+    add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=>setLine(s,TRIX(A,p.period)));}},
+  TSI:{kind:'osc',params:[{k:'short',v:25},{k:'long',v:13},{k:'_color',v:'#fb7185'}],
+    add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=>setLine(s,TSI(A,p.short,p.long)));}},
+  WilliamsR:{kind:'osc',params:[{k:'period',v:14},{k:'_color',v:'#94a3b8'}],
+    add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=>setLine(s,WilliamsR(A,p.period)));}},
+  Aroon:{kind:'osc',params:[{k:'period',v:14},{k:'_color',v:'#38bdf8'}],
+    add(p){const up=lineOn(cOsc), down=lineOn(cOsc,{lineWidth:1}); setSeriesColor(up,p._color); setSeriesColor(down,hexToRGBA(p._color,0.7)); return packOsc([up,down],A=>{ const a=Aroon(A,p.period); setLine(up,a.up); setLine(down,a.down); });}},
+  ADX:{kind:'osc',params:[{k:'period',v:14},{k:'_color',v:'#fbbf24'}],
+    add(p){const adxL=lineOn(cOsc), plus=lineOn(cOsc,{lineWidth:1}), minus=lineOn(cOsc,{lineWidth:1});
+      setSeriesColor(adxL,p._color); setSeriesColor(plus,hexToRGBA('#22c55e',0.9)); setSeriesColor(minus,hexToRGBA('#ef4444',0.9));
+      return packOsc([adxL,plus,minus],A=>{ const a=ADX(A,p.period); setLine(adxL,a.adx); setLine(plus,a.plusDI); setLine(minus,a.minusDI); });
+    }},
+  Awesome:{kind:'osc',params:[{k:'fast',v:5},{k:'slow',v:34},{k:'_color',v:'#67e8f9'}],
+    add(p){const s=histOn(cOsc,{base:0}); return packOsc(s,A=> s.setData(A.map((d,i)=>({time:d.time,value:Awesome(A,p.fast,p.slow)[i]??NaN}))) );}},
+  ElderRay:{kind:'osc',params:[{k:'ema',v:13},{k:'_color',v:'#fca5a5'}],
+    add(p){ // Bull Power = High - EMA, Bear Power = Low - EMA
+      const bull=histOn(cOsc,{base:0}), bear=histOn(cOsc,{base:0});
+      return packOsc([bull,bear],A=>{
+        const e=EMA(A,p.ema); bull.setData(A.map((d,i)=>({time:d.time,value:e[i]==null?NaN:(d.high-e[i])})));
+        bear.setData(A.map((d,i)=>({time:d.time,value:e[i]==null?NaN:(d.low-e[i])})));
+      });
+    }},
+
+  /* Volume / Flow */
+  Volume:{kind:'overlay',params:[{k:'_color',v:'#64748b'}],
+    add(p){const v=histOn(cMain,{priceFormat:{type:'volume'}, priceScaleId:'left'}); return pack(v,A=> v.setData(A.map(d=>({time:d.time,value:d.volume??0}))) );}},
+  OBV:{kind:'osc',params:[{k:'_color',v:'#c084fc'}], add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=> setLine(s,OBVcalc(A)) );}},
+  MFI:{kind:'osc',params:[{k:'period',v:14},{k:'_color',v:'#10b981'}], add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=> setLine(s,MFIcalc(A,p.period)) );}},
+  CMF:{kind:'osc',params:[{k:'period',v:20},{k:'_color',v:'#93c5fd'}], add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=> setLine(s,CMFcalc(A,p.period)) );}},
+  ADL:{kind:'osc',params:[{k:'_color',v:'#e879f9'}], add(p){const s=lineOn(cOsc); setSeriesColor(s,p._color); return packOsc(s,A=> setLine(s,ADLcalc(A)) );}},
 };
 
 /* Presets UI */
@@ -644,21 +766,13 @@ els.indSel.addEventListener('change', ()=>{ renderParams(); renderPresetDropdown
 function renderParams(){
   const key=els.indSel.value, def=Registry[key];
   els.paramRow.innerHTML='';
-  (def.params||[]).forEach(p=>{
+  (def?.params||[]).forEach(p=>{
     const w=document.createElement('div'); w.className='kvs';
     const lab=document.createElement('label'); lab.className='hint'; lab.textContent=p.k==='_color'?'COLOR':p.k.toUpperCase();
     let inp;
-    if(p.type==='bool'){
-      inp=document.createElement('input'); inp.type='checkbox'; inp.checked=!!p.v;
-    }else{
-      inp=document.createElement('input');
-      inp.type = (p.k==='_color') ? 'color' : 'number';
-      inp.value=p.v;
-      if(p.k!=='_color'){ if(p.min!=null) inp.min=p.min; if(p.step!=null) inp.step=p.step; }
-    }
-    inp.dataset.key=p.k;
-    w.appendChild(lab); w.appendChild(inp);
-    els.paramRow.appendChild(w);
+    if(p.type==='bool'){ inp=document.createElement('input'); inp.type='checkbox'; inp.checked=!!p.v; }
+    else{ inp=document.createElement('input'); inp.type = (p.k==='_color') ? 'color' : 'number'; inp.value=p.v; if(p.k!=='_color'){ if(p.min!=null) inp.min=p.min; if(p.step!=null) inp.step=p.step; } }
+    inp.dataset.key=p.k; w.appendChild(lab); w.appendChild(inp); els.paramRow.appendChild(w);
   });
 }
 renderParams(); renderPresetDropdown();
@@ -678,7 +792,9 @@ function collectParams(){
 }
 
 function addIndicator(){
-  const key=els.indSel.value, def=Registry[key], params=collectParams();
+  const key=els.indSel.value, def=Registry[key];
+  if(!def){ setStatus('Indicator not implemented'); return; }
+  const params=collectParams();
   if(params._color==null) params._color=defaultColor;
   const pack=def.add(params);
   setPackColor(pack, params._color);
@@ -696,7 +812,7 @@ els.haToggle.addEventListener('change', ()=>{
   if(els.haToggle.checked){
     ensureCandleSeries(); ensureHeikinSeries();
     haSeries.setData(HeikinAshi(DATA));
-    sCandle.setData([]); // hide native candles when HA on
+    sCandle.setData([]);
   }else{
     ensureCandleSeries();
     sCandle.setData(DATA.map(d=>({time:d.time,open:d.open,high:d.high,low:d.low,close:d.close})));
@@ -706,7 +822,7 @@ els.haToggle.addEventListener('change', ()=>{
   if(!userInteracting) anchorLatestSlightRight(cMain.timeScale());
 });
 
-/* Settings modal (works for all indicators) */
+/* Settings modal */
 const sheetWrap=$('sheetWrap'), sheetParams=$('sheetParams'), sheetTitle=$('sheetTitle'), sheetSub=$('sheetSub');
 $('sheetClose').onclick=()=>sheetWrap.style.display='none';
 function openSheet(id){
@@ -773,8 +889,9 @@ function restoreLayout(){
     if(L.tf){ els.tf.value=L.tf; }
     if(typeof L.ha==='boolean'){ els.haToggle.checked=L.ha; }
     (L.indicators||[]).forEach(it=>{
-      const pack=Registry[it.key]?.add(it.params||{}); if(!pack) return; setPackColor(pack,(it.params||{})._color);
-      const item={id:idSeq++,key:it.key,kind:(Registry[it.key].kind||'overlay'),params:(it.params||{}),series:pack.series,update:pack.update,extraCleanup:pack.extraCleanup,visible:true};
+      const add=Registry[it.key]; if(!add) return;
+      const pack=add.add(it.params||{}); setPackColor(pack,(it.params||{})._color);
+      const item={id:idSeq++,key:it.key,kind:(add.kind||'overlay'),params:(it.params||{}),series:pack.series,update:pack.update,extraCleanup:pack.extraCleanup,visible:true};
       Active.push(item);
     });
     renderBadges(); if(DATA.length){ Active.forEach(i=>i.update(DATA)); }
@@ -821,7 +938,6 @@ els.range36.addEventListener('click', ()=> loadMonths(36));
 
 /* ========= Boot ========= */
 (async function(){
-  // Silence unhandled promise errors from UI
   window.addEventListener('unhandledrejection', e=>{ e.preventDefault?.(); console.warn('silenced rejection', e.reason); });
   window.addEventListener('error', e=>{ /* keep console only */ });
 
@@ -846,15 +962,9 @@ els.range36.addEventListener('click', ()=> loadMonths(36));
   }
 
   await loadAll();   // initial
-
-  // IMPORTANT: Do NOT auto-add RSI. User must select RSI → Add to show oscillator.
-  // Layout restore (may add indicators from previous session)
   restoreLayout();
-
-  // Ensure layout rows consistent on boot
   refreshOscLayout();
 
-  // Final gentle anchor
   setTimeout(()=>{ if(!userInteracting){ clampLeftEdge(cMain.timeScale(), 0); anchorLatestSlightRight(cMain.timeScale()); } }, 50);
 })();
 </script>
